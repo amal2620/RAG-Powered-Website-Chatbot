@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RAG Chatbot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: monospace;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #7ee8a2;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    #doc-count {
+      font-size: 0.75rem;
+      color: #555;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 24px;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555;
+      margin-bottom: 14px;
+    }
+
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      background: #0f0f0f;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-family: monospace;
+      font-size: 0.9rem;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: #7ee8a2; }
+
+    button {
+      background: #7ee8a2;
+      color: #0f0f0f;
+      border: none;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      font-weight: bold;
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #ingest-status, #answer-area {
+      margin-top: 14px;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .ok   { color: #7ee8a2; }
+    .err  { color: #e87e7e; }
+    .muted{ color: #555; }
+
+    #answer-text {
+      color: #e0e0e0;
+      margin-bottom: 16px;
+    }
+
+    #sources { font-size: 0.75rem; color: #555; }
+
+    #sources details {
+      margin-top: 6px;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+
+    #sources summary { cursor: pointer; color: #7ee8a2; }
+    #sources p { margin-top: 6px; color: #888; }
+  </style>
+</head>
+<body>
+
+  <h1>RAG Chatbot</h1>
+  <div id="doc-count" class="muted">checking store...</div>
+
+  <!-- ── Step 1: Ingest URL ── -->
+  <div class="card">
+    <h2>Step 1 — Add a URL</h2>
+    <input type="url" id="url-input" placeholder="https://example.com" />
+    <br/>
+    <button id="ingest-btn" onclick="ingest()">Scrape &amp; Store</button>
+    <div id="ingest-status"></div>
+  </div>
+
+  <!-- ── Step 2: Ask a question ── -->
+  <div class="card">
+    <h2>Step 2 — Ask a question</h2>
+    <input type="text" id="question-input" placeholder="What topics does this course cover?" />
+    <br/>
+    <button id="query-btn" onclick="ask()">Ask</button>
+    <div id="answer-area" style="display:none">
+      <div id="answer-text"></div>
+      <div id="sources"></div>
+    </div>
+  </div>
+
+<script>
+  // ── LESSON: fetch() sends HTTP requests from the browser to FastAPI
+  // It returns a Promise — we use async/await to wait for the response
+
+  const API = ""  // empty = same host, so http://localhost:8000
+
+  // check doc count on page load
+  async function checkHealth() {
+    try {
+      const res = await fetch(`${API}/health`)
+      const data = await res.json()
+      document.getElementById("doc-count").textContent =
+        `${data.docs_in_store} chunks in store`
+    } catch {
+      document.getElementById("doc-count").textContent = "could not reach server"
+    }
+  }
+
+  async function ingest() {
+    const url = document.getElementById("url-input").value.trim()
+    const status = document.getElementById("ingest-status")
+    const btn = document.getElementById("ingest-btn")
+
+    if (!url) { status.innerHTML = '<span class="err">Enter a URL first.</span>'; return }
+
+    btn.disabled = true
+    status.innerHTML = '<span class="muted">Scraping... this may take 30–60 seconds</span>'
+
+    // LESSON: POST request with JSON body
+    const res = await fetch(`${API}/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, limit: 5 })
+    })
+    const data = await res.json()
+    btn.disabled = false
+
+    if (data.error) {
+      status.innerHTML = `<span class="err">Error: ${data.error}</span>`
+    } else {
+      status.innerHTML = `<span class="ok">${data.message}</span>`
+      checkHealth()   // refresh doc count
+    }
+  }
+
+  async function ask() {
+    const question = document.getElementById("question-input").value.trim()
+    const answerArea = document.getElementById("answer-area")
+    const answerText = document.getElementById("answer-text")
+    const sources = document.getElementById("sources")
+    const btn = document.getElementById("query-btn")
+
+    if (!question) return
+
+    btn.disabled = true
+    answerArea.style.display = "block"
+    answerText.innerHTML = '<span class="muted">Thinking...</span>'
+    sources.innerHTML = ""
+
+    const res = await fetch(`${API}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, top_k: 3, min_score: 0.1 })
+    })
+    const data = await res.json()
+    btn.disabled = false
+
+    if (data.error) {
+      answerText.innerHTML = `<span class="err">${data.error}</span>`
+      return
+    }
+
+    answerText.textContent = data.answer
+
+    // show sources as collapsible sections
+    const conf = `<div class="muted" style="margin-bottom:8px">Confidence: ${(data.confidence * 100).toFixed(0)}%</div>`
+    const srcHtml = data.sources.map((s, i) => `
+      <details>
+        <summary>Source ${i+1} — score ${(s.score * 100).toFixed(0)}%</summary>
+        <p>${s.source}</p>
+        <p>${s.preview}...</p>
+      </details>
+    `).join("")
+    sources.innerHTML = conf + srcHtml
+  }
+
+  // run on load
+  checkHealth()
+</script>
+</body>
+</html>

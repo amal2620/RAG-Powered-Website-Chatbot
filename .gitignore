@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 venv/
 env/
+data/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -21,3 +22,6 @@ Thumbs.db
 faiss_index/
 *.faiss
 *.pkl
+data/vector_store/f233218e-69d3-4f69-8b52-bbee0decbce0/data_level0.bin
+data/vector_store/f233218e-69d3-4f69-8b52-bbee0decbce0/length.bin
+data/vector_store/chroma.sqlite3
